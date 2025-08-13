@@ -1,0 +1,54 @@
+
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/php
+{
+    "name": "PHP & MySQL",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "app",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash",
+                "php.validate.executablePath": "/usr/local/bin/php",
+                "php.suggest.basic": false,
+                "editor.formatOnSave": true
+            },
+            "extensions": [
+                "felixfbecker.php-debug",
+                "bmewburn.vscode-intelephense-client",
+                "esbenp.prettier-vscode",
+                "vivaxy.vscode-conventional-commits",
+                "teabyii.ayu",
+                "cweijan.vscode-mysql-client2",
+                "riturajps.html-snippets-pro",
+                "xabikos.javascriptsnippets",
+                "pkief.material-icon-theme",
+                "codeviz.codeviz",
+                "cweijan.dbclient-jdbc",
+                "boonboonsiri.gemini-autocomplete",
+                "google.geminicodeassist",
+                "mhutchie.git-graph",
+                "donjayamanne.githistory",
+                "eamodio.gitlens",
+                "ecmel.vscode-html-css",
+                "visualstudioexptteam.vscodeintellic",
+                "ritwickdey.liveserver",
+                "ms-vsliveshare.vsliveshare",
+                "christian-kohler.npm-intellisense",
+                "postman.postman-for-vscode",
+                "bradlc.vscode-tailwindcss",
+                "neptunedesign.vs-html-to-css",
+                "codeium.codeium",
+                "redhat.vscode-yaml"
+            ]
+        }
+    },
+    "forwardPorts": [
+        8081
+    ],
+    "features": {
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers-extra/features/composer:1": {}
+    }
+}
