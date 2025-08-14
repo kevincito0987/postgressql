@@ -127,12 +127,88 @@ El tipo `bytea` soporta dos formatos para entrada y salida: el formato "hex" y e
 - `range`: Rango de valores
 
 ### Enumeradores
+```sql
+    CREATE TYPE sexo AS ENUM('Masculino', 'Femenino', 'Otro');
 
-```pgsql
-CREATE TYPE sexo AS ENUM('Masculino', 'Femenino', 'Otro');
+    CREATE TABLE camper(
+        name varchar(100) NOT NULL,
+        sexo_camper sexo NOT NULL
+    );
 
-CREATE TABLE camper(
-    name varchar(100) NOT NULL,
-    sexo_camper sexo NOT NULL
+    CREATE TABLE ejemplo(id serial PRIMARY KEY, nombre varchar(100) NOT NULL, descripcion text NULL, precio numeric(10,2) NOT NULL, en_stock boolean NOT NULL, fecha_creacion_ date NOT NULL, hora_creacion
+    time NOT NULL, fecha_hora timestamp NOT NULL, fecha_hora_zona, timestamp with time zone, duracion interv
+    al, direccion_ip iner, direccion_mac macaddr, punto_geometrico point, datos_json json, datos__jsonb jsonb
+    , identificador_unico uuid, cantidad_monetaria money, rangos int4range, colores_preferidos varchar(20)[])
+
+    INSERT INTO ejemplo (nombre,descripcion, precio, en_stock, fecha_creacion_, hora_creacion, fecha_hora, fecha_hora_zona, duracion, direccion_ip, direccion_mac, punto_geometrico, datos_json, datos__jsonb, identificador_unico, cantidad_monetaria, rangos, colores_preferidos)values('Ejemplo A', 'Lorem ipsum-....', 9990.99, true, '2025-07-10', '20:30:20', '2025-07-10 20:30:20', '2025-07-10 20:30:10-05','1 day', '192.168.0.1', '08:00:27:00:00:00', '(10, 20)', '{"key":"value"}', '{"key":"value"}', 'b8ac502c-7049-4ae5-aa7e-642ad77ca4f1', '100.00', '[10, 20)', ARRAY['Rojo', 'Azul']);
+
+```
+
+## Constrains.
+
+```sql
+
+    CREATE TABLE empleados(
+        id serial,
+        nombre varchar(100) NOT NULL,
+        edad integer NOT NULL,
+        salario numeric(10,2) NOT NULL,
+        fecha_contrato date,
+        vigente boolean DEFAULT true
+    ); 
+    ALTER TABLE empleados ADD PRIMARY KEY(id);
+
+    CREATE TABLE departamentos (
+        id serial, 
+        nombre varchar(100) NOT NULL,
+        vigente boolean DEFAULT true,
+        PRIMARY KEY(id)    
+        );
+
+    ALTER TABLE empleados ADD CONSTRAINT fk_departamento_id FOREIGN KEY(departamento_id) REFERENCES departamentos(id);
+
+    ALTER TABLE empleados ADD COLUMN departamento_id integer NOT NULL;
+
+    ALTER TABLE empleados ADD UNIQUE(nombre);
+
+    ALTER TABLE empleados ADD CONSTRAINT edadEmpleado CHECK (edad>=18);
+    
+    ALTER TABLE empleados ALTER COLUMN salario SET DEFAULT 400.00;
+```
+
+
+### Taller contstraint.
+
+```SQL
+CREATE TABLE country (
+    id serial,
+    name varchar(50)
 );
+
+CREATE TABLE region (
+    id serial,
+    name varchar(50),
+    idcountry integer
+);
+
+CREATE TABLE city (
+    id serial,
+    name varchar(50),
+    idregion integer
+);
+
+ALTER TABLE country ADD PRIMARY KEY(id);
+ALTER TABLE region ADD PRIMARY KEY(id);
+ALTER TABLE city ADD PRIMARY KEY(id);
+
+ALTER TABLE country ALTER COLUMN name SET NOT NULL;
+ALTER TABLE region ALTER COLUMN name SET NOT NULL;
+ALTER TABLE city ALTER COLUMN name SET NOT NULL;
+
+ALTER TABLE region ADD CONSTRAINT fk_country_id FOREIGN KEY(idcountry) REFERENCES country(id);
+ALTER TABLE city ADD CONSTRAINT fk_region_id FOREIGN KEY(idregion) REFERENCES region(id);
+
+ALTER TABLE country ALTER COLUMN name SET DEFAULT '';
+ALTER TABLE region ALTER COLUMN name SET DEFAULT '';
+ALTER TABLE city ALTER COLUMN name SET DEFAULT '';
 ```
