@@ -212,3 +212,125 @@ ALTER TABLE country ALTER COLUMN name SET DEFAULT '';
 ALTER TABLE region ALTER COLUMN name SET DEFAULT '';
 ALTER TABLE city ALTER COLUMN name SET DEFAULT '';
 ```
+
+
+## Taller Hoy.
+
+
+```sql
+    CREATE TABLE categorias(
+        id_categoria serial,
+        descripcion varchar(45),
+        estado boolean
+    );
+
+    ALTER TABLE categorias ADD PRIMARY KEY(id_categoria);
+    ALTER TABLE categorias ALTER COLUMN descripcion SET NOT NULL;
+    ALTER TABLE categorias ALTER COLUMN estado SET DEFAULT true;
+
+
+    CREATE TABLE productos(
+        id_producto serial,
+        nombre varchar(45),
+        id_categoria integer,
+        codigo_barras varchar(150),
+        precio_venta decimal(16,2),
+        cantidad_stock integer,
+        estado boolean
+    );
+    ALTER TABLE productos ADD PRIMARY KEY(id_producto);
+    ALTER TABLE productos ADD CONSTRAINT fk_categoria_id FOREIGN KEY(id_categoria) REFERENCES categorias(id_categoria) ON DELETE CASCADE ON UPDATE CASCADE;
+    ALTER TABLE productos ALTER COLUMN nombre SET NOT NULL;
+    ALTER TABLE productos ALTER COLUMN codigo_barras SET NOT NULL;
+    ALTER TABLE productos ALTER COLUMN precio_venta SET NOT NULL;
+    ALTER TABLE productos ALTER COLUMN cantidad_stock SET NOT NULL;
+    ALTER TABLE productos ALTER COLUMN estado SET DEFAULT true;
+
+    CREATE TABLE clientes(
+        id serial,
+        nombre varchar(40),
+        apellidos varchar(100),
+        celular varchar(20),
+        direccion varchar(80),
+        correo_electronico varchar(70)
+    );
+
+    ALTER TABLE clientes ADD PRIMARY KEY(id);
+    ALTER TABLE clientes ALTER COLUMN nombre SET NOT NULL;
+    ALTER TABLE clientes ALTER COLUMN apellidos SET NOT NULL;
+    ALTER TABLE clientes ALTER COLUMN celular SET NOT NULL;
+    ALTER TABLE clientes ALTER COLUMN direccion SET NOT NULL;
+    ALTER TABLE clientes ALTER COLUMN correo_electronico SET NOT NULL;
+    ALTER TABLE clientes ADD UNIQUE(correo_electronico);
+    ALTER TABLE clientes ALTER COLUMN estado SET DEFAULT true;
+
+    CREATE TABLE compras(
+        id_compra serial,
+        id_cliente integer,
+        fecha timestamp,
+        medio_pago char(1),
+        comentario varchar(300),
+        estado char(1)
+    );
+    ALTER TABLE compras ADD PRIMARY KEY(id_compra);
+    ALTER TABLE compras ALTER COLUMN fecha SET NOT NULL;
+    ALTER TABLE compras ALTER COLUMN medio_pago SET NOT NULL;
+    ALTER TABLE compras ALTER COLUMN estado SET DEFAULT true;
+    ALTER TABLE compras ADD CONSTRAINT fk_cliente_id FOREIGN KEY(id_cliente) REFERENCES clientes(id) ON DELETE CASCADE ON UPDATE CASCADE;
+
+
+    CREATE TABLE compras_productos(
+        id_compra integer,
+        id_producto integer,
+        cantidad integer,
+        total decimal(16,2),
+        estado boolean
+    );
+    ALTER TABLE compras_productos ADD PRIMARY KEY(id_compra, id_producto);
+    ALTER TABLE compras_productos ALTER COLUMN cantidad SET NOT NULL;
+    ALTER TABLE compras_productos ALTER COLUMN total SET NOT NULL;
+    ALTER TABLE compras_productos ALTER COLUMN estado SET DEFAULT true;
+    ALTER TABLE compras_productos ADD CONSTRAINT fk_compra_id FOREIGN KEY(id_compra) REFERENCES compras(id_compra) ON DELETE CASCADE ON UPDATE CASCADE;
+    ALTER TABLE compras_productos ADD CONSTRAINT fk_producto_id FOREIGN KEY(id_producto) REFERENCES productos(id_producto) ON DELETE CASCADE ON UPDATE CASCADE;
+
+
+    -- DML INSERTS.
+
+    INSERT INTO categorias (descripcion) VALUES
+    ('Electrónica'),
+    ('Ropa'),
+    ('Libros'),
+    ('Hogar'),
+    ('Alimentos');  
+
+    -- Inserts para la tabla clientes
+    INSERT INTO clientes (nombre, apellidos, celular, direccion, correo_electronico) VALUES
+    ('Juan', 'Perez Garcia', '5512345678', 'Av. Reforma 101, CDMX', 'juan.perez@email.com'),
+    ('Maria', 'Lopez Diaz', '5587654321', 'Calle Madero 20, Monterrey', 'maria.lopez@email.com'),
+    ('Carlos', 'Rodriguez Sanchez', '5511223344', 'Blvd. del Sol 50, Guadalajara', 'carlos.r@email.com');
+
+    -- Inserts para la tabla productos
+    INSERT INTO productos (nombre, id_categoria, codigo_barras, precio_venta, cantidad_stock) VALUES
+    ('Laptop Gamer', 1, '1234567890123', 25000.00, 50),
+    ('Camiseta de Algodón', 2, '9876543210987', 250.50, 200),
+    ('El Señor de los Anillos', 3, '1122334455667', 350.75, 100),
+    ('Juego de Sábanas', 4, '9988776655443', 600.00, 80),
+    ('Arroz Blanco 1kg', 5, '5566778899001', 35.00, 500);
+
+    -- Inserts para la tabla compras
+    -- Nota: 'id_cliente' debe coincidir con los IDs de los clientes insertados.
+    INSERT INTO compras (id_cliente, fecha, medio_pago, comentario, estado) VALUES
+    (1, '2024-08-15 10:30:00', 'C', 'Entrega a domicilio urgente', 'P'),
+    (2, '2024-08-14 15:45:00', 'T', 'Paquetería estándar', 'E'),
+    (3, '2024-08-13 12:00:00', 'C', 'Recoger en tienda', 'P');
+
+    -- Inserts para la tabla compras_productos
+    -- Nota: 'id_compra' y 'id_producto' deben coincidir con las compras y productos.
+    -- El campo 'total' es la 'cantidad' * 'precio_venta' del producto.
+    INSERT INTO compras_productos (id_compra, id_producto, cantidad, total) VALUES
+    (1, 1, 1, 25000.00), -- 1 Laptop
+    (1, 2, 2, 501.00), -- 2 Camisetas
+    (2, 3, 1, 350.75), -- 1 Libro
+    (3, 5, 5, 175.00); -- 5 Arroces
+
+```
