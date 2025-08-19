@@ -333,4 +333,7 @@ ALTER TABLE city ALTER COLUMN name SET DEFAULT '';
     (2, 3, 1, 350.75), -- 1 Libro
     (3, 5, 5, 175.00); -- 5 Arroces
 
-```
+
+    --Esquemas.
+\dn para esquemas.
+``` 
