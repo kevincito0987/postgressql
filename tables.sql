@@ -1,12 +1,9 @@
--- Active: 1755173012633@@127.0.0.1@5432@campus
---Taller Hoy, esquemas.
-
--- Active: 1755088816497@@127.0.0.1@5433@campus
-
 -- Opcional: crea y usa el esquema
 
 DROP SCHEMA IF EXISTS miscompras CASCADE;
+
 CREATE SCHEMA IF NOT EXISTS miscompras;
+
 SET search_path TO miscompras;
 
 CREATE TABLE miscompras.clientes (
@@ -290,26 +287,36 @@ INSERT INTO compras_productos (id_compra, id_producto, cantidad, total, estado) 
 ((SELECT id_compra FROM compras WHERE id_cliente='CC1001' AND fecha='2025-08-20 10:15:23'),
  (SELECT id_producto FROM productos WHERE nombre='Leche entera 1L'), 3, 12600.00, 1);
 
-
- SELECT p.id_producto, p.nombre, SUM(cp.cantidad), SUM(cp.total) AS unidades FROM miscompras.compras_productos cp
+--Top 10 productos más vendidos (unidades) y su ingreso total
+    -- SUM()
+    -- USING
+    
+ SELECT p.id_producto, p.nombre, SUM(cp.cantidad) AS cantidad, SUM(cp.total) AS total_unidades FROM miscompras.compras_productos cp
  JOIN miscompras.productos p USING(id_producto)
  GROUP BY p.id_producto
- ORDER BY unidades DESC
+ ORDER BY total_unidades DESC
  LIMIT 10;
 
- --Porcentile_cont
+-- Venta promedio por compra y mediana aproximada
 
- SELECT ROUND(AVG(t.total_compra), 2) AS promedio_compra,
-PORCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY t.total_compra) AS mediana_compra
+    -- PERCENTILE_CONT(..) WITHIN GROUP(ORDER BY ..)
+    -- ROUND
+    -- USING
+
+SELECT ROUND(AVG(t.total_compra), 2) AS promedio_compra,
+PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY t.total_compra) AS mediana_compra
 FROM(
-     SELECT c.id_compra, SUM(cp.total) AS total_compra
+    SELECT c.id_compra, SUM(cp.total) AS total_compra
     FROM miscompras.compras c
     JOIN miscompras.compras_productos cp USING(id_compra)
     GROUP BY c.id_compra
 ) t;
 
+--Compras por cliente y ranking
 
---RANK
+    -- COUNT
+    -- SUM
+    -- RANK() OVER(ORDER BY ... ASC/DESC) ASC/DESC
 
 SELECT cl.id, cl.nombre || ' ' || cl.apellidos AS cliente,
     COUNT(DISTINCT c.id_compra) AS compras,
@@ -321,7 +328,12 @@ JOIN miscompras.compras_productos cp USING(id_compra)
 GROUP BY cl.id, cliente
 ORDER BY gasto_total;
 
---Fechas.
+--Ticket por compra
+
+    -- COUNT
+    -- ROUND
+    -- SUM
+    -- WITH .. AS
 
 WITH t AS(
     SELECT c.id_compra, c.fecha::date as dia, SUM(cp.total) AS total_compra
@@ -337,7 +349,9 @@ FROM t
 GROUP BY dia
 ORDER BY dia;
 
---5 
+--Búsqueda “tipo e‑commerce”: productos activos, disponibles y que empiecen por 'Caf'
+
+-- ILIKE
 
 SELECT p.id_producto, p.nombre, p.precio_venta, p.cantidad_stock
 FROM miscompras.productos p
@@ -362,6 +376,21 @@ $$
 
 SELECT miscompras.total_compra(1);
 
+--Materialized view mensual 
+
+DROP VIEW IF EXISTS  miscompras.reporte_mes;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS miscompras.reporte_mes AS
+SELECT DATE_TRUNC('month', c.fecha) AS mes,
+    SUM(cp.total) AS total_ventas
+FROM miscompras.compras c
+JOIN miscompras.compras_productos cp USING(id_compra)
+GROUP BY mes;
+
+SELECT * FROM miscompras.reporte_mes;
+
+REFRESH MATERIALIZED VIEW miscompras.reporte_mes;
+
 --24 Triggers.
 
 --GREATEST
@@ -385,6 +414,8 @@ FOR EACH ROW EXECUTE FUNCTION miscompras.trg_descuento_stock();
 
 SELECT * FROM miscompras.compras_productos;
 
+SELECT * FROM miscompras.productos;
+
 --20. vistas.
 
 CREATE OR REPLACE VIEW miscompras.reporte_mes AS
@@ -396,21 +427,6 @@ CREATE OR REPLACE VIEW miscompras.reporte_mes AS
     ORDER BY mes;
 
 SELECT * FROM miscompras.reporte_mes;
-
---21 Vistas Materializadas.
-
-CREATE MATERIALIZED VIEW miscompras.mv_reporte_mes AS
-    SELECT DATE_TRUNC('month', c.fecha) AS mes,
-        SUM(cp.total) AS total_ventas
-    FROM miscompras.compras c
-    JOIN miscompras.compras_productos cp USING(id_compra)
-    GROUP BY mes
-    ORDER BY mes;
-
-SELECT * FROM miscompras.mv_reporte_mes;
-
-REFRESH MATERIALIZED VIEW miscompras.mv_reporte_mes;
-
 -- valores tipo moneda. 
 --TO_CHAR.
 
@@ -425,3 +441,50 @@ $$
 $$;
 
 SELECT toMoney(precio_venta) AS precio_productos FROM miscompras.productos;
+
+--Procedimientos: Procedure: Registrar nuevos clientes
+-- 
+
+-- Actualizar nombres
+CREATE SEQUENCE miscompras.clientes_id_seq START 1009;
+
+ALTER TABLE miscompras.clientes ALTER COLUMN id SET DEFAULT 'CC' || nextval('miscompras.clientes_id_seq');
+
+CREATE OR REPLACE PROCEDURE miscompras.pc_registrar_nuevo_cliente(
+    p_nombre VARCHAR(100),
+    p_apellido VARCHAR(100),
+    p_celular NUMERIC(10, 0),
+    p_direccion VARCHAR(80),
+    p_email VARCHAR(70)
+)
+LANGUAGE plpgsql AS
+$$
+BEGIN
+    INSERT INTO miscompras.clientes(
+        nombre, 
+        apellidos, 
+        celular, 
+        direccion, 
+        correo_electronico
+    )
+    VALUES(
+        INITCAP(TRIM(p_nombre)), 
+        INITCAP(TRIM(p_apellido)), 
+        p_celular, 
+        TRIM(p_direccion), 
+        TRIM(p_email)
+    );
+    
+    RAISE NOTICE 'Se registró el usuario % exitosamente.', p_email;
+
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE EXCEPTION 'Error al registrar el nuevo usuario, el correo electrónico ya se encuentra registrado.';
+    WHEN OTHERS THEN
+        RAISE EXCEPTION 'Ocurrió un error inesperado: %', SQLERRM;
+END;
+$$;
+
+CALL miscompras.pc_registrar_nuevo_cliente('juan', 'suarez', 3001234567, 'Calle Falsa 123', 'juan.suarez@email.com');
+
+SELECT * FROM miscompras.clientes;
