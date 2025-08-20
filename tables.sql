@@ -9,7 +9,7 @@ DROP SCHEMA IF EXISTS miscompras CASCADE;
 CREATE SCHEMA IF NOT EXISTS miscompras;
 SET search_path TO miscompras;
 
-CREATE TABLE clientes (
+CREATE TABLE miscompras.clientes (
     id                 VARCHAR(20)  PRIMARY KEY,
     nombre             VARCHAR(40)  NOT NULL,
     apellidos          VARCHAR(100) NOT NULL,
@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_cp_id_producto
 
     -- DML INSERTS.
 
-    INSERT INTO clientes (id, nombre, apellidos, celular, direccion, correo_electronico) VALUES
+INSERT INTO clientes (id, nombre, apellidos, celular, direccion, correo_electronico) VALUES
 ('CC1001', 'Camila',   'Ramírez Gómez',     3004567890, 'Cra 12 #34-56, Bogotá',      'camila.ramirez@example.com'),
 ('CC1002', 'Andrés',   'Pardo Salinas',     3109876543, 'Cl 45 #67-12, Medellín',     'andres.pardo@example.com'),
 ('CC1003', 'Valeria',  'Gutiérrez Peña',    3012223344, 'Av 7 #120-15, Bogotá',       'valeria.gutierrez@example.com'),
@@ -279,6 +279,17 @@ INSERT INTO compras_productos (id_compra, id_producto, cantidad, total, estado) 
 ((SELECT id_compra FROM compras WHERE id_cliente='CC1004' AND fecha='2025-08-05 13:50:00'),
  (SELECT id_producto FROM productos WHERE nombre='Café de Colombia 500g'), 1, 28000.00, 1);
 
+ --Mis compras.
+
+INSERT INTO compras (id_cliente, fecha, medio_pago, comentario, estado) VALUES
+('CC1001', '2025-08-20 10:15:23', 'T', 'Compra semanal de Kevin',            'A');
+
+INSERT INTO compras_productos (id_compra, id_producto, cantidad, total, estado) VALUES
+((SELECT id_compra FROM compras WHERE id_cliente='CC1001' AND fecha='2025-08-20 10:15:23'),
+ (SELECT id_producto FROM productos WHERE nombre='Café de Colombia 500g'), 2, 56000.00, 1),
+((SELECT id_compra FROM compras WHERE id_cliente='CC1001' AND fecha='2025-08-20 10:15:23'),
+ (SELECT id_producto FROM productos WHERE nombre='Leche entera 1L'), 3, 12600.00, 1);
+
 
  SELECT p.id_producto, p.nombre, SUM(cp.cantidad), SUM(cp.total) AS unidades FROM miscompras.compras_productos cp
  JOIN miscompras.productos p USING(id_producto)
@@ -350,3 +361,67 @@ END;
 $$
 
 SELECT miscompras.total_compra(1);
+
+--24 Triggers.
+
+--GREATEST
+
+CREATE OR REPLACE FUNCTION miscompras.trg_descuento_stock()
+RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+    BEGIN
+        UPDATE miscompras.productos
+        SET cantidad_stock = GREATEST(cantidad_stock - NEW.cantidad, 0)
+        WHERE id_producto = NEW.id_producto;
+        RETURN NEW;
+    END;
+$$;
+
+DROP TRIGGER IF EXISTS compras_productos_descuento_stock ON miscompras.compras_productos;
+
+CREATE TRIGGER compras_productos_descuento_stock 
+AFTER INSERT ON miscompras.compras_productos
+FOR EACH ROW EXECUTE FUNCTION miscompras.trg_descuento_stock();
+
+SELECT * FROM miscompras.compras_productos;
+
+--20. vistas.
+
+CREATE OR REPLACE VIEW miscompras.reporte_mes AS
+    SELECT DATE_TRUNC('month', c.fecha) AS mes,
+        SUM(cp.total) AS total_ventas
+    FROM miscompras.compras c
+    JOIN miscompras.compras_productos cp USING(id_compra)
+    GROUP BY mes
+    ORDER BY mes;
+
+SELECT * FROM miscompras.reporte_mes;
+
+--21 Vistas Materializadas.
+
+CREATE MATERIALIZED VIEW miscompras.mv_reporte_mes AS
+    SELECT DATE_TRUNC('month', c.fecha) AS mes,
+        SUM(cp.total) AS total_ventas
+    FROM miscompras.compras c
+    JOIN miscompras.compras_productos cp USING(id_compra)
+    GROUP BY mes
+    ORDER BY mes;
+
+SELECT * FROM miscompras.mv_reporte_mes;
+
+REFRESH MATERIALIZED VIEW miscompras.mv_reporte_mes;
+
+-- valores tipo moneda. 
+--TO_CHAR.
+
+SELECT nombre, '$' || TO_CHAR(precio_venta, 'FM999G999G999D00') FROM miscompras.productos;
+
+CREATE OR REPLACE FUNCTION toMoney(p_numeric NUMERIC)
+RETURNS VARCHAR LANGUAGE plpgsql AS
+$$
+    BEGIN
+        RETURN '$ ' || TO_CHAR(p_numeric, 'FM999G999G999D00');
+    END;
+$$;
+
+SELECT toMoney(precio_venta) AS precio_productos FROM miscompras.productos;
