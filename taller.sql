@@ -1188,3 +1188,130 @@ VALUES (
         28000.00,
         1
     );
+
+
+--TALLER POSTGRESQL.
+
+--1. Obtén el “Top 10” de productos por unidades vendidas y su ingreso total, usando `JOIN ... USING`, agregación con `SUM()`, agrupación con `GROUP BY`, ordenamiento descendente con `ORDER BY` y paginado con `LIMIT`.
+
+SELECT t.id_producto, t.nombre, t.cantidad, t.total_unidades
+FROM (
+    SELECT p.id_producto, p.nombre, SUM(cp.cantidad) AS cantidad, SUM(cp.total) AS total_unidades
+    FROM miscompras.compras_productos cp
+    JOIN miscompras.productos p USING(id_producto)
+    GROUP BY p.id_producto
+    ORDER BY total_unidades DESC
+) t
+LIMIT 10;
+
+--2.Calcula el total pagado promedio por compra y la mediana aproximada usando una subconsulta agregada y la función de ventana ordenada `PERCENTILE_CONT(...) WITHIN GROUP`, además de `AVG()` y `ROUND()` para formateo.
+
+SELECT ROUND(AVG(t.total_compra), 2) AS promedio_compra,
+PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY t.total_compra) AS mediana_compra
+FROM(
+    SELECT c.id_compra, SUM(cp.total) AS total_compra
+    FROM miscompras.compras c
+    JOIN miscompras.compras_productos cp USING(id_compra)
+    GROUP BY c.id_compra
+) t;
+
+-- 3. Lista compras por cliente con gasto total y un ranking global de gasto empleando funciones de ventana (`RANK() OVER (ORDER BY SUM(...) DESC)`), concatenación de texto y `COUNT(DISTINCT ...)`.
+
+SELECT cl.id, cl.nombre || ' ' || cl.apellidos AS cliente,
+    COUNT(DISTINCT c.id_compra) AS compras,
+    SUM(cp.total) AS gasto_total,
+    RANK() OVER (ORDER BY SUM(cp.total) DESC) AS ranking
+FROM miscompras.clientes cl 
+JOIN miscompras.compras c on cl.id = c.id_cliente
+JOIN miscompras.compras_productos cp USING(id_compra)
+GROUP BY cl.id, cliente
+ORDER BY gasto_total;
+
+--4. Calcula por día el número de compras, ticket promedio y total, usando un `CTE (WITH) o (Common Table Expression)“subconsulta con nombre”`, conversión de `fecha ::date`, y agregaciones (`COUNT, AVG, SUM`) con `ORDER BY`.
+WITH t AS(
+    SELECT c.id_compra, c.fecha::date as dia, SUM(cp.total) AS total_compra
+    FROM miscompras.compras c 
+    JOIN miscompras.compras_productos cp USING(id_compra)
+    GROUP BY c.id_compra, c.fecha::date
+)
+SELECT dia,
+    COUNT(*) as numero_compras,
+    ROUND(AVG(total_compra), 2) AS promedio_compras,
+    SUM(total_compra) AS total_compras_dia
+FROM t
+GROUP BY dia
+ORDER BY dia;
+
+--5. Realiza una búsqueda estilo e-commerce de productos activos y con stock cuyo nombre empiece por “caf”, usando filtros en `WHERE`, comparación numérica y búsqueda case-insensitive con `ILIKE 'caf%'`.
+
+SELECT p.id_producto, p.nombre, p.precio_venta, p.cantidad_stock
+FROM miscompras.productos p
+WHERE p.estado = 1 
+    AND p.cantidad_stock > 0
+    AND p.nombre ILIKE 'caf%';
+
+
+--6. Devuelve los productos con el precio formateado como texto monetario usando concatenación `('||')` y `TO_CHAR(numeric, 'FM999G999G999D00')`, ordenando de mayor a menor precio.
+
+-- El modelo `'FM999G999G999D00'` se descompone así:
+
+-- - `FM`: “Fill Mode”. Quita espacios de relleno a la izquierda/derecha.
+-- - `9`: dígito opcional. Se muestran tantos como existan; si faltan, no se rellenan con ceros.
+-- - `0`: dígito obligatorio. Aquí `00` fuerza siempre dos decimales.
+-- - `G`: separador de miles según la configuración regional (p. ej., `,` en `en_US`, `.` en `es_CO`).
+-- - `D`: separador decimal según la configuración regional (p. ej., `.` en `en_US`, `,` en `es_CO`).
+
+-- Ejemplos
+
+-- - Con `lc_numeric = 'en_US'`: `to_char(1234567.5, 'FM999G999G999D00')` → `1,234,567.50`
+-- - Con `lc_numeric = 'es_CO'`: `to_char(1234567.5, 'FM999G999G999D00')` → `1.234.567,50`
+
+--VER TAMBIEN EL NOMBRE DEL PRODUCTO
+
+SELECT nombre, '$' || TO_CHAR(precio_venta, 'FM999G999G999D00') FROM miscompras.productos;
+
+CREATE OR REPLACE FUNCTION miscompras.toMoney(p_nombre VARCHAR, p_numeric NUMERIC)
+RETURNS VARCHAR LANGUAGE plpgsql AS
+$$
+    BEGIN
+        RETURN p_nombre || ' - ' || '$ ' || TO_CHAR(p_numeric, 'FM999G999G999D00');
+    END;
+$$;
+
+SELECT
+    toMoney(nombre, precio_venta) AS producto_con_precio
+FROM
+    miscompras.productos;
+
+--7. Arma el “resumen de canasta” por compra: subtotal, total producto sin iva, `IVA al 19%` y total con IVA, mediante `SUM()` y `ROUND()` sobre el total por ítem, agrupado por compra usando TO_CHAR.
+
+SELECT
+    c.id_compra,
+    TO_CHAR(SUM(cp.total), 'FM999G999G999D00') AS subtotal,
+    TO_CHAR(ROUND(SUM(cp.total / 1.19), 2), 'FM999G999G999D00') AS total_sin_iva,
+    TO_CHAR(ROUND(SUM(cp.total / 1.19) * 0.19, 2), 'FM999G999G999D00') AS iva,
+    TO_CHAR(SUM(cp.total), 'FM999G999G999D00') AS total_con_iva
+FROM
+    miscompras.compras c
+JOIN
+    miscompras.compras_productos cp USING(id_compra)
+GROUP BY
+    c.id_compra;
+
+
+--8. Calcula la participación (%) de cada categoría en las ventas usando agregaciones por categoría y una ventana sobre el total (`SUM(SUM(total)) OVER ()`), más `ROUND()` para el porcentaje.
+
+SELECT
+    c.id_categoria,
+    c.descripcion AS categoria,
+    ROUND(SUM(cp.total) * 100 / SUM(SUM(cp.total)) OVER (), 2) AS porcentaje_participacion
+FROM
+    miscompras.categorias c
+JOIN
+    miscompras.productos p USING(id_categoria)
+JOIN
+    miscompras.compras_productos cp USING(id_producto)
+GROUP BY
+    c.id_categoria, c.descripcion
+ORDER BY
+    porcentaje_participacion DESC;
