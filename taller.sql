@@ -1302,16 +1302,433 @@ GROUP BY
 --8. Calcula la participación (%) de cada categoría en las ventas usando agregaciones por categoría y una ventana sobre el total (`SUM(SUM(total)) OVER ()`), más `ROUND()` para el porcentaje.
 
 SELECT
-    c.id_categoria,
     c.descripcion AS categoria,
-    ROUND(SUM(cp.total) * 100 / SUM(SUM(cp.total)) OVER (), 2) AS porcentaje_participacion
+    TO_CHAR(SUM(cp.total), 'L999G999G999D99') AS total_ventas,
+    ROUND((SUM(cp.total) * 100.0) / SUM(SUM(cp.total)) OVER (), 2) AS porcentaje_ventas
 FROM
-    miscompras.categorias c
-JOIN
-    miscompras.productos p USING(id_categoria)
-JOIN
-    miscompras.compras_productos cp USING(id_producto)
+    miscompras.compras_productos AS cp
+INNER JOIN
+    miscompras.productos AS p ON cp.id_producto = p.id_producto
+INNER JOIN
+    miscompras.categorias AS c ON p.id_categoria = c.id_categoria
 GROUP BY
-    c.id_categoria, c.descripcion
+    c.descripcion
 ORDER BY
-    porcentaje_participacion DESC;
+    porcentaje_ventas DESC;
+
+
+
+--9.Clasifica el nivel de stock de productos activos (`CRÍTICO/BAJO/OK`) usando `CASE` sobre el campo `cantidad_stock` y ordena por el stock ascendente.
+
+SELECT
+    p.nombre,
+    p.cantidad_stock,
+    CASE
+        WHEN p.cantidad_stock <= 200 THEN 'CRÍTICO'
+        WHEN p.cantidad_stock <= 10 THEN 'BAJO'
+        ELSE 'OK'
+    END AS nivel_stock
+FROM
+    miscompras.productos AS p
+WHERE
+    p.estado = 1
+ORDER BY
+    p.cantidad_stock ASC;
+
+--10. Obtén la última compra por cliente utilizando`DISTINCT ON (id_cliente)` combinado con `ORDER BY ... fecha DESC` y una agregación del total de la compra.
+
+SELECT
+    DISTINCT ON (cl.id) cl.nombre,
+    cl.apellidos,
+    co.fecha,
+    TO_CHAR(SUM(cp.total), 'L999G999G999D99') AS total_compra
+FROM
+    miscompras.clientes AS cl
+INNER JOIN
+    miscompras.compras AS co ON cl.id = co.id_cliente
+INNER JOIN
+    miscompras.compras_productos AS cp ON co.id_compra = cp.id_compra
+GROUP BY
+    cl.id,
+    cl.nombre,
+    cl.apellidos,
+    co.id_compra,
+    co.fecha
+ORDER BY
+    cl.id,
+    co.fecha DESC;
+
+--11. Devuelve los 2 productos más vendidos por categoría usando una subconsulta con `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY SUM(...) DESC)` y luego filtrando `ROW_NUMBER` <= 2.
+
+SELECT
+    categoria,
+    nombre_producto,
+    TO_CHAR(total_ventas, 'L999G999G999D99') AS total_ventas_formateado,
+    cantidad_vendida
+FROM (
+    SELECT
+        c.descripcion AS categoria,
+        p.nombre AS nombre_producto,
+        SUM(cp.cantidad) AS cantidad_vendida,
+        SUM(cp.total) AS total_ventas,
+        ROW_NUMBER() OVER (PARTITION BY c.id_categoria ORDER BY SUM(cp.cantidad) DESC) AS rn
+    FROM
+        miscompras.compras_productos AS cp
+    INNER JOIN
+        miscompras.productos AS p ON cp.id_producto = p.id_producto
+    INNER JOIN
+        miscompras.categorias AS c ON p.id_categoria = c.id_categoria
+    GROUP BY
+        c.id_categoria,
+        c.descripcion,
+        p.nombre
+) AS ranked_products
+WHERE
+    rn <= 2
+ORDER BY
+    categoria,
+    cantidad_vendida DESC
+LIMIT 2;
+
+--12. Calcula ventas mensuales: agrupa por mes truncando la fecha con `DATE_TRUNC('month', fecha)`, cuenta compras distintas (`COUNT(DISTINCT ...)`) y suma ventas, ordenando cronológicamente.
+
+DROP VIEW IF EXISTS  miscompras.reporte_mes;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS miscompras.reporte_mes AS
+SELECT DATE_TRUNC('month', c.fecha) AS mes,
+    SUM(cp.total) AS total_ventas
+FROM miscompras.compras c
+JOIN miscompras.compras_productos cp USING(id_compra)
+GROUP BY mes;
+
+SELECT * FROM miscompras.reporte_mes;
+
+REFRESH MATERIALIZED VIEW miscompras.reporte_mes;
+
+--13. Lista productos que nunca se han vendido mediante un anti-join con `NOT EXISTS`, comparando por id_producto.
+
+    -- `WHERE  NOT EXISTS (
+    --   SELECT *
+    --   FROM   ..
+    --   WHERE  ..
+    -- );`
+
+    SELECT
+    p.id_producto,
+    p.nombre,
+    p.precio_venta,
+    p.cantidad_stock,
+    c.descripcion AS categoria
+    FROM
+        miscompras.productos AS p
+    INNER JOIN
+        miscompras.categorias AS c ON p.id_categoria = c.id_categoria
+    WHERE
+        NOT EXISTS (
+            SELECT 1
+            FROM miscompras.compras_productos AS cp
+            WHERE cp.id_producto = p.id_producto
+        );
+
+--14. Identifica clientes que, al comprar “café”, también compran “pan” en la misma compra, usando un filtro con `ILIKE` y una subconsulta correlacionada con `EXISTS`.
+
+    -- `WHERE ...  EXISTS (
+    --   SELECT *
+    --   FROM   ..
+    --   WHERE  ..
+    -- );`
+
+SELECT
+    cl.id,
+    cl.nombre,
+    cl.apellidos
+FROM
+    miscompras.clientes AS cl
+WHERE
+    EXISTS (
+        SELECT 1
+        FROM miscompras.compras AS co
+        INNER JOIN miscompras.compras_productos AS cp
+            ON co.id_compra = cp.id_compra
+        INNER JOIN miscompras.productos AS p
+            ON cp.id_producto = p.id_producto
+        WHERE
+            co.id_cliente = cl.id
+            AND p.nombre ILIKE '%café%'
+            AND EXISTS (
+                SELECT 1
+                FROM miscompras.compras_productos AS cp2
+                INNER JOIN miscompras.productos AS p2
+                    ON cp2.id_producto = p2.id_producto
+                WHERE
+                    cp2.id_compra = co.id_compra
+                    AND p2.nombre ILIKE '%pan%'
+            )
+    );
+
+--15. Estima el margen porcentual “simulado” de un producto aplicando operadores aritméticos sobre precio_venta y formateo con `ROUND()` a un decimal.
+
+-- Estima un margen de beneficio porcentual simulado para cada producto.
+-- Esta consulta asume un costo hipotético del 70% del precio de venta y
+-- calcula un margen de ganancia simulado, redondeando el resultado a un decimal.
+SELECT
+    p.nombre AS nombre_producto,
+    p.precio_venta,
+    ROUND(((p.precio_venta - (p.precio_venta * 0.70)) / p.precio_venta) * 100, 1) AS margen_simulado_porcentual
+FROM
+    miscompras.productos AS p
+ORDER BY
+    margen_simulado_porcentual DESC;
+
+--16. 1. Filtra clientes de un dominio dado usando expresiones regulares con el operador `~*` (case-insensitive) y limpieza con `TRIM()` sobre el correo electrónico.
+
+SELECT * FROM miscompras.clientes;
+
+SELECT
+    id,
+    nombre,
+    apellidos,
+    correo_electronico
+FROM
+    miscompras.clientes
+WHERE
+    TRIM(correo_electronico) ~* '@example\.com$';
+
+--17. Normaliza nombres y apellidos de clientes con `TRIM()` e `INITCAP()` para capitalizar, retornando columnas formateadas.
+
+CREATE SEQUENCE miscompras.clientes_id_seq START 1009;
+
+ALTER TABLE miscompras.clientes ALTER COLUMN id SET DEFAULT 'CC' || nextval('miscompras.clientes_id_seq');
+
+CREATE OR REPLACE PROCEDURE miscompras.pc_registrar_nuevo_cliente(
+    p_nombre VARCHAR(100),
+    p_apellido VARCHAR(100),
+    p_celular NUMERIC(10, 0),
+    p_direccion VARCHAR(80),
+    p_email VARCHAR(70)
+)
+LANGUAGE plpgsql AS
+$$
+BEGIN
+    INSERT INTO miscompras.clientes(
+        nombre, 
+        apellidos, 
+        celular, 
+        direccion, 
+        correo_electronico
+    )
+    VALUES(
+        INITCAP(TRIM(p_nombre)), 
+        INITCAP(TRIM(p_apellido)), 
+        p_celular, 
+        TRIM(p_direccion), 
+        TRIM(p_email)
+    );
+    
+    RAISE NOTICE 'Se registró el usuario % exitosamente.', p_email;
+
+EXCEPTION
+    WHEN unique_violation THEN
+        RAISE EXCEPTION 'Error al registrar el nuevo usuario, el correo electrónico ya se encuentra registrado.';
+    WHEN OTHERS THEN
+        RAISE EXCEPTION 'Ocurrió un error inesperado: %', SQLERRM;
+END;
+$$;
+
+CALL miscompras.pc_registrar_nuevo_cliente('juan', 'suarez', 3001234567, 'Calle Falsa 123', 'juan.suarez@email.com');
+
+SELECT * FROM miscompras.clientes;
+
+--18. Selecciona los productos cuyo `id_producto` es par usando el operador módulo `%` en la cláusula `WHERE`..
+
+SELECT
+    id_producto,
+    nombre,
+    precio_venta,
+    cantidad_stock
+FROM
+    miscompras.productos
+WHERE
+    (id_producto % 2) = 0;
+
+--19. Crea una vista ventas_por_compra que consolide `id_compra`,` id_cliente`, `fecha` y el `SUM(total)` por compra, usando `CREATE OR REPLACE VIEW` y `JOIN ... USING`.
+
+CREATE OR REPLACE VIEW miscompras.ventas_por_compra AS
+SELECT
+    co.id_compra,
+    co.id_cliente,
+    co.fecha,
+    SUM(cp.total) AS total_compra
+FROM
+    miscompras.compras AS co
+INNER JOIN
+    miscompras.compras_productos AS cp
+    USING (id_compra)
+GROUP BY
+    co.id_compra,
+    co.id_cliente,
+    co.fecha;
+
+SELECT
+    id_compra,
+    id_cliente,
+    fecha,
+    TO_CHAR(total_compra, 'L999G999G999D99') AS total_venta
+FROM
+    miscompras.ventas_por_compra
+ORDER BY
+    fecha DESC;
+
+--20. 1. Crea una vista materializada mensual mv_ventas_mensuales que agregue ventas por `DATE_TRUNC('month', fecha);` recuerda refrescarla con `REFRESH MATERIALIZED VIEW` cuando corresponda.
+
+DROP VIEW IF EXISTS  miscompras.reporte_mes;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS miscompras.reporte_mes AS
+SELECT DATE_TRUNC('month', c.fecha) AS mes,
+    SUM(cp.total) AS total_ventas
+FROM miscompras.compras c
+JOIN miscompras.compras_productos cp USING(id_compra)
+GROUP BY mes;
+
+SELECT * FROM miscompras.reporte_mes;
+
+REFRESH MATERIALIZED VIEW miscompras.reporte_mes;
+
+--21. Realiza un “UPSERT” de un producto referenciado por codigo_barras usando `INSERT ... ON CONFLICT (...) DO UPDATE`, actualizando nombre y precio_venta cuando exista conflicto.
+
+ALTER TABLE miscompras.productos
+ADD CONSTRAINT ux_productos_codigo_barras_constraint UNIQUE (codigo_barras);
+
+-- Ahora la consulta UPSERT funcionará correctamente.
+INSERT INTO miscompras.productos (
+    nombre,
+    id_categoria,
+    codigo_barras,
+    precio_venta,
+    cantidad_stock,
+    estado
+)
+VALUES (
+    'Nuevo Producto', -- Nuevo nombre del producto a insertar o actualizar
+    1,                -- ID de la categoría del producto
+    '123456789012',   -- Código de barras único para identificar el producto
+    99.99,            -- Precio de venta del producto
+    100,              -- Cantidad inicial de stock
+    1                 -- Estado del producto (1 para activo)
+)
+ON CONFLICT (codigo_barras) DO UPDATE SET
+    nombre = EXCLUDED.nombre,
+    precio_venta = EXCLUDED.precio_venta;
+
+SELECT * FROM miscompras.productos;
+
+--22. Recalcula el stock descontando lo vendido a partir de un `UPDATE ... FROM (SELECT ... GROUP BY ...)`, empleando `COALESCE()` y `GREATEST()` para evitar negativos.
+
+UPDATE miscompras.productos AS p
+SET
+    cantidad_stock = GREATEST(
+        COALESCE(p.cantidad_stock - sub.cantidad_vendida, p.cantidad_stock),
+        0
+    )
+FROM (
+    SELECT
+        cp.id_producto,
+        SUM(cp.cantidad) AS cantidad_vendida
+    FROM
+        miscompras.compras_productos AS cp
+    GROUP BY
+        cp.id_producto
+) AS sub
+WHERE
+    p.id_producto = sub.id_producto;
+
+--23. Implementa una función PL/pgSQL (`miscompras.fn_total_compra`) que reciba `p_id_compra` y retorne el `total` con `COALESCE(SUM(...), 0);` define el tipo de retorno `NUMERIC(16,2)`.
+
+CREATE OR REPLACE FUNCTION miscompras.fn_total_compra(p_id_compra INT)
+RETURNS NUMERIC(16, 2) AS $$
+DECLARE
+    v_total NUMERIC(16, 2);
+BEGIN
+    SELECT
+        COALESCE(SUM(total), 0)
+    INTO
+        v_total
+    FROM
+        miscompras.compras_productos
+    WHERE
+        id_compra = p_id_compra;
+
+    RETURN v_total;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT miscompras.fn_total_compra(1);
+
+--24. Define un trigger `AFTER INSERT` sobre `compras_productos` que descuente stock mediante una función `RETURNS TRIGGER` y el uso del registro `NEW`, protegiendo con `GREATEST()` para no quedar bajo cero.
+
+CREATE OR REPLACE FUNCTION miscompras.trg_descuento_stock()
+RETURNS TRIGGER LANGUAGE plpgsql AS
+$$
+    BEGIN
+        UPDATE miscompras.productos
+        SET cantidad_stock = GREATEST(cantidad_stock - NEW.cantidad, 0)
+        WHERE id_producto = NEW.id_producto;
+        RETURN NEW;
+    END;
+$$;
+
+DROP TRIGGER IF EXISTS compras_productos_descuento_stock ON miscompras.compras_productos;
+
+CREATE TRIGGER compras_productos_descuento_stock 
+AFTER INSERT ON miscompras.compras_productos
+FOR EACH ROW EXECUTE FUNCTION miscompras.trg_descuento_stock();
+
+SELECT
+    id_compra,
+    id_producto,
+    cantidad,
+    TO_CHAR(total, 'L999G999G999D99') AS total_formateado,
+    estado
+FROM miscompras.compras_productos;
+
+--25. Asigna la “posición por precio” de cada producto dentro de su categoría con `DENSE_RANK() OVER (PARTITION BY ... ORDER BY precio_venta DESC)` y presenta el ranking.
+
+SELECT
+    p.nombre AS nombre_producto,
+    c.descripcion AS nombre_categoria,
+    TO_CHAR(p.precio_venta, 'L999G999G999D99') AS precio_venta,
+    DENSE_RANK() OVER (PARTITION BY c.id_categoria ORDER BY p.precio_venta DESC) AS ranking_por_precio
+FROM
+    miscompras.productos AS p
+INNER JOIN
+    miscompras.categorias AS c ON p.id_categoria = c.id_categoria
+ORDER BY
+    c.descripcion,
+    p.precio_venta DESC;
+
+--26. 1. Para cada cliente, muestra su gasto por compra, el gasto anterior y el delta entre compras usando `LAG(...) OVER (PARTITION BY id_cliente ORDER BY dia)` dentro de un `CTE` que agrega por día.
+
+WITH GastoPorClienteDia AS (
+    SELECT
+        co.id_cliente,
+        DATE(co.fecha) AS dia,
+        SUM(cp.total) AS gasto_diario
+    FROM
+        miscompras.compras AS co
+    JOIN
+        miscompras.compras_productos AS cp ON co.id_compra = cp.id_compra
+    GROUP BY
+        co.id_cliente,
+        DATE(co.fecha)
+)
+SELECT
+    id_cliente,
+    dia,
+    TO_CHAR(gasto_diario, 'L999G999G999D99') AS gasto_actual,
+    TO_CHAR(LAG(gasto_diario, 1, 0) OVER (PARTITION BY id_cliente ORDER BY dia), 'L999G999G999D99') AS gasto_anterior,
+    TO_CHAR(gasto_diario - LAG(gasto_diario, 1, 0) OVER (PARTITION BY id_cliente ORDER BY dia), 'L999G999G999D99') AS delta
+FROM
+    GastoPorClienteDia
+ORDER BY
+    id_cliente,
+    dia;

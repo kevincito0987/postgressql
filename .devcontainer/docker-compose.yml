@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: postgres-container
+    container_name: postgres-container-taller
     volumes:
       - ../..:/workspaces:cached
 
@@ -16,7 +16,7 @@ services:
   pg-db:
     image: postgres:14.3
     restart: unless-stopped
-    container_name: 'pg-db-container'
+    container_name: 'pg-db-container-taller'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     environment:

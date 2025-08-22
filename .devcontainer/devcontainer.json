@@ -2,7 +2,7 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/php
 {
-    "name": "PHP & MySQL",
+    "name": "Postgress Taller",
     "dockerComposeFile": "docker-compose.yml",
     "service": "app",
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
@@ -21,6 +21,7 @@
                 "vivaxy.vscode-conventional-commits",
                 "teabyii.ayu",
                 "cweijan.vscode-mysql-client2",
+                "cweijan.vscode-database-client2",
                 "riturajps.html-snippets-pro",
                 "xabikos.javascriptsnippets",
                 "pkief.material-icon-theme",

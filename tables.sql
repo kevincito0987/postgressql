@@ -415,18 +415,6 @@ FOR EACH ROW EXECUTE FUNCTION miscompras.trg_descuento_stock();
 SELECT * FROM miscompras.compras_productos;
 
 SELECT * FROM miscompras.productos;
-
---20. vistas.
-
-CREATE OR REPLACE VIEW miscompras.reporte_mes AS
-    SELECT DATE_TRUNC('month', c.fecha) AS mes,
-        SUM(cp.total) AS total_ventas
-    FROM miscompras.compras c
-    JOIN miscompras.compras_productos cp USING(id_compra)
-    GROUP BY mes
-    ORDER BY mes;
-
-SELECT * FROM miscompras.reporte_mes;
 -- valores tipo moneda. 
 --TO_CHAR.
 
